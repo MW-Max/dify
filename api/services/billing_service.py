@@ -1,4 +1,6 @@
+import logging
 import os
+from collections.abc import Sequence
 from typing import Literal
 
 import httpx
@@ -10,6 +12,8 @@ from extensions.ext_database import db
 from extensions.ext_redis import redis_client
 from libs.helper import RateLimiter
 from models import Account, TenantAccountJoin, TenantAccountRole
+
+logger = logging.getLogger(__name__)
 
 
 class BillingService:
@@ -239,3 +243,30 @@ class BillingService:
     def sync_partner_tenants_bindings(cls, account_id: str, partner_key: str, click_id: str):
         payload = {"account_id": account_id, "click_id": click_id}
         return cls._send_request("PUT", f"/partners/{partner_key}/tenants", json=payload)
+    
+    @classmethod
+    def get_plan_bulk(cls, tenant_ids: Sequence[str]) -> dict[str, str]:
+        """
+        Bulk fetch billing subscription plan via billing API.
+
+        Payload: {"tenant_ids": ["t1", "t2", ...]} (max 200 per request)
+
+        Returns:
+            Mapping of tenant_id -> plan
+        """
+        results: dict[str, str] = {}
+
+        chunk_size = 200
+        for i in range(0, len(tenant_ids), chunk_size):
+            chunk = tenant_ids[i : i + chunk_size]
+            try:
+                resp = cls._send_request("POST", "/subscription/plan/batch", json={"tenant_ids": chunk})
+                data = resp.get("data", {})
+                for tenant_id, plan in data.items():
+                    if isinstance(plan, str):
+                        results[tenant_id] = plan
+            except Exception:
+                logger.exception("Failed to fetch billing info batch for tenants: %s", chunk)
+                continue
+
+        return results

@@ -1117,6 +1117,17 @@ class CeleryScheduleTasksConfig(BaseSettings):
     )
 
 
+class SandboxMessagesCleanConfig(BaseSettings):
+    SANDBOX_MESSAGES_CLEAN_TENANT_BATCH_SIZE: PositiveInt = Field(
+        description="Maximum number of tenants to process in each batch",
+        default=200,
+    )
+    SANDBOX_MESSAGES_CLEAN_MESSAGE_BATCH_SIZE: PositiveInt = Field(
+        description="Maximum number of messages to process in each batch",
+        default=200,
+    )
+
+
 class PositionConfig(BaseSettings):
     POSITION_PROVIDER_PINS: str = Field(
         description="Comma-separated list of pinned model providers",
@@ -1264,6 +1275,7 @@ class FeatureConfig(
     PositionConfig,
     RagEtlConfig,
     RepositoryConfig,
+    SandboxMessagesCleanConfig,
     SecurityConfig,
     TenantIsolatedTaskQueueConfig,
     ToolConfig,
