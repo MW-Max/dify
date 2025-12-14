@@ -64,9 +64,7 @@ class TestSandboxMessagesCleanService:
     @pytest.fixture
     def expired_date(self):
         """Get the expiration date for messages."""
-        return datetime.datetime.now() - datetime.timedelta(
-            days=dify_config.PLAN_SANDBOX_CLEAN_MESSAGE_DAY_SETTING
-        )
+        return datetime.datetime.now() - datetime.timedelta(days=dify_config.PLAN_SANDBOX_CLEAN_MESSAGE_DAY_SETTING)
 
     @pytest.fixture
     def non_expired_date(self):
@@ -76,7 +74,7 @@ class TestSandboxMessagesCleanService:
     def _create_account_and_tenant(self, plan="sandbox"):
         """Helper to create account and tenant."""
         fake = Faker()
-        
+
         account = Account(
             email=fake.email(),
             name=fake.name(),
@@ -85,7 +83,7 @@ class TestSandboxMessagesCleanService:
         )
         db.session.add(account)
         db.session.commit()
-        
+
         tenant = Tenant(
             name=fake.company(),
             plan=plan,
@@ -93,7 +91,7 @@ class TestSandboxMessagesCleanService:
         )
         db.session.add(tenant)
         db.session.commit()
-        
+
         tenant_account_join = TenantAccountJoin(
             tenant_id=tenant.id,
             account_id=account.id,
@@ -101,13 +99,13 @@ class TestSandboxMessagesCleanService:
         )
         db.session.add(tenant_account_join)
         db.session.commit()
-        
+
         return account, tenant
 
     def _create_app(self, tenant, account):
         """Helper to create an app."""
         fake = Faker()
-        
+
         app = App(
             tenant_id=tenant.id,
             name=fake.company(),
@@ -124,7 +122,7 @@ class TestSandboxMessagesCleanService:
         )
         db.session.add(app)
         db.session.commit()
-        
+
         return app
 
     def _create_conversation(self, app, account):
@@ -143,16 +141,16 @@ class TestSandboxMessagesCleanService:
         )
         db.session.add(conversation)
         db.session.commit()
-        
+
         return conversation
 
     def _create_message(self, app, conversation, created_at=None):
         """Helper to create a message with all related records."""
         if created_at is None:
             created_at = datetime.datetime.now()
-        
+
         from decimal import Decimal
-        
+
         message = Message(
             app_id=app.id,
             conversation_id=conversation.id,
@@ -174,16 +172,16 @@ class TestSandboxMessagesCleanService:
         )
         db.session.add(message)
         db.session.commit()
-        
+
         # Create related records
         self._create_message_relations(message)
-        
+
         return message
 
     def _create_message_relations(self, message):
         """Helper to create all message-related records."""
         import json
-        
+
         # MessageFeedback
         feedback = MessageFeedback(
             app_id=message.app_id,
@@ -194,7 +192,7 @@ class TestSandboxMessagesCleanService:
             from_end_user_id=str(uuid.uuid4()),
         )
         db.session.add(feedback)
-        
+
         # MessageAnnotation
         annotation = MessageAnnotation(
             app_id=message.app_id,
@@ -205,7 +203,7 @@ class TestSandboxMessagesCleanService:
             account_id=message.from_account_id,
         )
         db.session.add(annotation)
-        
+
         # MessageChain
         chain = MessageChain(
             message_id=message.id,
@@ -215,7 +213,7 @@ class TestSandboxMessagesCleanService:
         )
         db.session.add(chain)
         db.session.flush()  # Get chain.id
-        
+
         # MessageAgentThought
         thought = MessageAgentThought(
             message_id=message.id,
@@ -230,7 +228,7 @@ class TestSandboxMessagesCleanService:
             created_by=str(uuid.uuid4()),
         )
         db.session.add(thought)
-        
+
         # MessageFile
         file = MessageFile(
             message_id=message.id,
@@ -242,7 +240,7 @@ class TestSandboxMessagesCleanService:
             created_by=str(uuid.uuid4()),
         )
         db.session.add(file)
-        
+
         # SavedMessage
         saved = SavedMessage(
             app_id=message.app_id,
@@ -251,9 +249,9 @@ class TestSandboxMessagesCleanService:
             created_by=str(uuid.uuid4()),
         )
         db.session.add(saved)
-        
+
         db.session.flush()  # Get annotation.id
-        
+
         # AppAnnotationHitHistory
         hit = AppAnnotationHitHistory(
             app_id=message.app_id,
@@ -266,7 +264,7 @@ class TestSandboxMessagesCleanService:
             annotation_content="Test annotation content",
         )
         db.session.add(hit)
-        
+
         # DatasetRetrieverResource
         resource = DatasetRetrieverResource(
             message_id=message.id,
@@ -287,20 +285,20 @@ class TestSandboxMessagesCleanService:
             created_by=message.from_account_id,
         )
         db.session.add(resource)
-        
+
         db.session.commit()
 
     def test_clean_no_tenants(self, db_session_with_containers, mock_billing_service):
         """Test cleaning when there are no tenants."""
         # Execute
         stats = SandboxMessagesCleanService.clean_sandbox_messages()
-        
+
         # Assert
         assert stats["batches"] == 0
         assert stats["tenants_processed"] == 0
         assert stats["total_messages"] == 0
         assert stats["total_deleted"] == 0
-        
+
         # BillingService should not be called
         mock_billing_service.get_plan_bulk.assert_not_called()
 
@@ -312,21 +310,21 @@ class TestSandboxMessagesCleanService:
             app = self._create_app(tenant, account)
             conv = self._create_conversation(app, account)
             self._create_message(app, conv, created_at=datetime.datetime.now() - datetime.timedelta(days=100))
-        
+
         # Mock billing service to return professional plans
         mock_billing_service.get_plan_bulk.return_value = {
             tenant.id: CloudPlan.PROFESSIONAL for tenant in db.session.query(Tenant).all()
         }
-        
+
         # Execute
         stats = SandboxMessagesCleanService.clean_sandbox_messages()
-        
+
         # Assert
         assert stats["batches"] == 1
         assert stats["tenants_processed"] == 0
         assert stats["total_messages"] == 0
         assert stats["total_deleted"] == 0
-        
+
         # All messages should still exist
         assert db.session.query(Message).count() == 3
 
@@ -342,19 +340,19 @@ class TestSandboxMessagesCleanService:
             app = self._create_app(tenant, account)
             conv = self._create_conversation(app, account)
             self._create_message(app, conv, created_at=non_expired_date)
-        
+
         # Mock billing service
         mock_billing_service.get_plan_bulk.return_value = dict.fromkeys(tenant_ids, CloudPlan.SANDBOX)
-        
+
         # Execute
         stats = SandboxMessagesCleanService.clean_sandbox_messages()
-        
+
         # Assert
         assert stats["batches"] == 1
         assert stats["tenants_processed"] == 2
         assert stats["total_messages"] == 0
         assert stats["total_deleted"] == 0
-        
+
         # All messages should still exist
         assert db.session.query(Message).count() == 2
 
@@ -372,22 +370,22 @@ class TestSandboxMessagesCleanService:
             # Create 3 expired messages per tenant
             for j in range(3):
                 self._create_message(app, conv, created_at=expired_date - datetime.timedelta(days=j))
-        
+
         # Mock billing service
         mock_billing_service.get_plan_bulk.return_value = dict.fromkeys(tenant_ids, CloudPlan.SANDBOX)
-        
+
         # Execute
         stats = SandboxMessagesCleanService.clean_sandbox_messages()
-        
+
         # Assert
         assert stats["batches"] == 1
         assert stats["tenants_processed"] == 2
         assert stats["total_messages"] == 6  # 2 tenants * 3 messages
         assert stats["total_deleted"] == 6
-        
+
         # All messages should be deleted
         assert db.session.query(Message).count() == 0
-        
+
         # All related records should be deleted
         assert db.session.query(MessageFeedback).count() == 0
         assert db.session.query(MessageAnnotation).count() == 0
@@ -405,7 +403,7 @@ class TestSandboxMessagesCleanService:
         # Setup: Create mixed tenants
         sandbox_tenant_ids = []
         pro_tenant_ids = []
-        
+
         # 2 sandbox tenants with expired messages
         for i in range(2):
             account, tenant = self._create_account_and_tenant(plan="sandbox")
@@ -413,7 +411,7 @@ class TestSandboxMessagesCleanService:
             app = self._create_app(tenant, account)
             conv = self._create_conversation(app, account)
             self._create_message(app, conv, created_at=expired_date)
-        
+
         # 2 professional tenants with expired messages (should not be deleted)
         for i in range(2):
             account, tenant = self._create_account_and_tenant(plan="professional")
@@ -421,7 +419,7 @@ class TestSandboxMessagesCleanService:
             app = self._create_app(tenant, account)
             conv = self._create_conversation(app, account)
             self._create_message(app, conv, created_at=expired_date)
-        
+
         # Mock billing service
         plan_map = {}
         for tid in sandbox_tenant_ids:
@@ -429,23 +427,21 @@ class TestSandboxMessagesCleanService:
         for tid in pro_tenant_ids:
             plan_map[tid] = CloudPlan.PROFESSIONAL
         mock_billing_service.get_plan_bulk.return_value = plan_map
-        
+
         # Execute
         stats = SandboxMessagesCleanService.clean_sandbox_messages()
-        
+
         # Assert
         assert stats["batches"] == 1
         assert stats["tenants_processed"] == 2  # Only sandbox tenants
         assert stats["total_messages"] == 2
         assert stats["total_deleted"] == 2
-        
+
         # Only professional tenant messages should remain
         assert db.session.query(Message).count() == 2
         remaining_messages = db.session.query(Message).all()
         remaining_app_ids = {msg.app_id for msg in remaining_messages}
-        pro_app_ids = {
-            app.id for app in db.session.query(App).filter(App.tenant_id.in_(pro_tenant_ids)).all()
-        }
+        pro_app_ids = {app.id for app in db.session.query(App).where(App.tenant_id.in_(pro_tenant_ids)).all()}
         assert remaining_app_ids == pro_app_ids
 
     def test_clean_mixed_expired_non_expired_messages(
@@ -456,27 +452,27 @@ class TestSandboxMessagesCleanService:
         account, tenant = self._create_account_and_tenant(plan="sandbox")
         app = self._create_app(tenant, account)
         conv = self._create_conversation(app, account)
-        
+
         # Create 3 expired messages
         for i in range(3):
             self._create_message(app, conv, created_at=expired_date - datetime.timedelta(days=i))
-        
+
         # Create 2 non-expired messages
         for i in range(2):
             self._create_message(app, conv, created_at=non_expired_date)
-        
+
         # Mock billing service
         mock_billing_service.get_plan_bulk.return_value = {tenant.id: CloudPlan.SANDBOX}
-        
+
         # Execute
         stats = SandboxMessagesCleanService.clean_sandbox_messages()
-        
+
         # Assert
         assert stats["batches"] == 1
         assert stats["tenants_processed"] == 1
         assert stats["total_messages"] == 3  # Only expired messages
         assert stats["total_deleted"] == 3
-        
+
         # Non-expired messages should remain
         assert db.session.query(Message).count() == 2
         remaining_messages = db.session.query(Message).all()
@@ -489,68 +485,64 @@ class TestSandboxMessagesCleanService:
         account, tenant = self._create_account_and_tenant(plan="sandbox")
         app = self._create_app(tenant, account)
         conv = self._create_conversation(app, account)
-        
+
         # Create 50 expired messages (will be deleted in batches)
         num_messages = 50
         for i in range(num_messages):
             self._create_message(app, conv, created_at=expired_date - datetime.timedelta(hours=i))
-        
+
         # Mock billing service
         mock_billing_service.get_plan_bulk.return_value = {tenant.id: CloudPlan.SANDBOX}
-        
+
         # Execute
         stats = SandboxMessagesCleanService.clean_sandbox_messages()
-        
+
         # Assert
         assert stats["batches"] == 1
         assert stats["tenants_processed"] == 1
         assert stats["total_messages"] == num_messages
         assert stats["total_deleted"] == num_messages
-        
+
         # All messages should be deleted
         assert db.session.query(Message).count() == 0
 
-    def test_clean_no_apps_for_sandbox_tenant(
-        self, db_session_with_containers, mock_billing_service
-    ):
+    def test_clean_no_apps_for_sandbox_tenant(self, db_session_with_containers, mock_billing_service):
         """Test cleaning sandbox tenant with no apps."""
         # Setup: Create sandbox tenant without apps
         account, tenant = self._create_account_and_tenant(plan="sandbox")
-        
+
         # Mock billing service
         mock_billing_service.get_plan_bulk.return_value = {tenant.id: CloudPlan.SANDBOX}
-        
+
         # Execute
         stats = SandboxMessagesCleanService.clean_sandbox_messages()
-        
+
         # Assert
         assert stats["batches"] == 1
         assert stats["tenants_processed"] == 0  # Skipped due to no apps
         assert stats["total_messages"] == 0
         assert stats["total_deleted"] == 0
 
-    def test_clean_billing_service_error(
-        self, db_session_with_containers, mock_billing_service, expired_date
-    ):
+    def test_clean_billing_service_error(self, db_session_with_containers, mock_billing_service, expired_date):
         """Test handling of billing service errors."""
         # Setup: Create tenant with expired messages
         account, tenant = self._create_account_and_tenant(plan="sandbox")
         app = self._create_app(tenant, account)
         conv = self._create_conversation(app, account)
         self._create_message(app, conv, created_at=expired_date)
-        
+
         # Mock billing service to raise exception
         mock_billing_service.get_plan_bulk.side_effect = Exception("Billing API unavailable")
-        
+
         # Execute - should not raise exception
         stats = SandboxMessagesCleanService.clean_sandbox_messages()
-        
+
         # Assert - no tenants should be processed due to billing error
         assert stats["batches"] == 1
         assert stats["tenants_processed"] == 0
         assert stats["total_messages"] == 0
         assert stats["total_deleted"] == 0
-        
+
         # Message should not be deleted
         assert db.session.query(Message).count() == 1
 
@@ -566,85 +558,79 @@ class TestSandboxMessagesCleanService:
             app = self._create_app(tenant, account)
             conv = self._create_conversation(app, account)
             self._create_message(app, conv, created_at=expired_date)
-        
+
         # Mock billing service to return data for only 2 tenants
         mock_billing_service.get_plan_bulk.return_value = {
             tenant_ids[0]: CloudPlan.SANDBOX,
             tenant_ids[1]: CloudPlan.PROFESSIONAL,
             # tenant_ids[2] is missing
         }
-        
+
         # Execute
         stats = SandboxMessagesCleanService.clean_sandbox_messages()
-        
+
         # Assert - only tenant with SANDBOX plan should be processed
         assert stats["batches"] == 1
         assert stats["tenants_processed"] == 1
         assert stats["total_messages"] == 1
         assert stats["total_deleted"] == 1
-        
+
         # 2 messages should remain (professional and missing tenant)
         assert db.session.query(Message).count() == 2
 
-    def test_clean_multiple_apps_per_tenant(
-        self, db_session_with_containers, mock_billing_service, expired_date
-    ):
+    def test_clean_multiple_apps_per_tenant(self, db_session_with_containers, mock_billing_service, expired_date):
         """Test cleaning tenant with multiple apps."""
         # Setup: Create sandbox tenant with 3 apps
         account, tenant = self._create_account_and_tenant(plan="sandbox")
-        
+
         for i in range(3):
             app = self._create_app(tenant, account)
             conv = self._create_conversation(app, account)
             # Create 2 messages per app
             for j in range(2):
                 self._create_message(app, conv, created_at=expired_date)
-        
+
         # Mock billing service
         mock_billing_service.get_plan_bulk.return_value = {tenant.id: CloudPlan.SANDBOX}
-        
+
         # Execute
         stats = SandboxMessagesCleanService.clean_sandbox_messages()
-        
+
         # Assert
         assert stats["batches"] == 1
         assert stats["tenants_processed"] == 1
         assert stats["total_messages"] == 6  # 3 apps * 2 messages
         assert stats["total_deleted"] == 6
-        
+
         # All messages should be deleted
         assert db.session.query(Message).count() == 0
 
-    def test_clean_preserves_conversation(
-        self, db_session_with_containers, mock_billing_service, expired_date
-    ):
+    def test_clean_preserves_conversation(self, db_session_with_containers, mock_billing_service, expired_date):
         """Test that conversation is preserved even when messages are deleted."""
         # Setup
         account, tenant = self._create_account_and_tenant(plan="sandbox")
         app = self._create_app(tenant, account)
         conv = self._create_conversation(app, account)
         self._create_message(app, conv, created_at=expired_date)
-        
+
         # Mock billing service
         mock_billing_service.get_plan_bulk.return_value = {tenant.id: CloudPlan.SANDBOX}
-        
+
         # Execute
         stats = SandboxMessagesCleanService.clean_sandbox_messages()
-        
+
         # Assert
         assert stats["total_deleted"] == 1
         assert db.session.query(Message).count() == 0
-        
+
         # Conversation should still exist
         assert db.session.query(Conversation).count() == 1
         remaining_conv = db.session.query(Conversation).first()
         assert remaining_conv.id == conv.id
 
-    def test_clean_with_cursor_pagination(
-        self, db_session_with_containers, mock_billing_service, expired_date
-    ):
+    def test_clean_with_cursor_pagination(self, db_session_with_containers, mock_billing_service, expired_date):
         """Test cursor-based pagination works correctly with multiple batches.
-        
+
         This test validates:
         1. Tenant cursor pagination - processing tenants in multiple batches
         2. Message batch deletion - deleting messages in multiple batches per tenant
@@ -656,34 +642,30 @@ class TestSandboxMessagesCleanService:
         # Create enough tenants to trigger multiple tenant batches
         tenant_batch_size = dify_config.SANDBOX_MESSAGES_CLEAN_TENANT_BATCH_SIZE
         num_tenants = int(tenant_batch_size * 2.5)  # 5 tenants = 3 tenant batches (2+2+1)
-        
+
         # Create enough messages per tenant to trigger multiple message batches
         messages_per_tenant = 5  # 5 messages per tenant = 3 message batches (2+2+1)
-        
+
         tenant_ids = []
         total_messages_created = 0
-        
+
         for i in range(num_tenants):
             account, tenant = self._create_account_and_tenant(plan="sandbox")
             tenant_ids.append(tenant.id)
             app = self._create_app(tenant, account)
             conv = self._create_conversation(app, account)
-            
+
             # Create multiple messages per tenant to test message batch deletion
             for j in range(messages_per_tenant):
-                self._create_message(
-                    app, 
-                    conv, 
-                    created_at=expired_date - datetime.timedelta(hours=j)
-                )
+                self._create_message(app, conv, created_at=expired_date - datetime.timedelta(hours=j))
                 total_messages_created += 1
-        
+
         # Mock billing service
         mock_billing_service.get_plan_bulk.return_value = dict.fromkeys(tenant_ids, CloudPlan.SANDBOX)
-        
+
         # Execute
         stats = SandboxMessagesCleanService.clean_sandbox_messages()
-        
+
         # Assert tenant pagination
         assert stats["batches"] >= 3, (
             f"Expected at least 3 tenant batches (for {num_tenants} tenants with batch size {tenant_batch_size}), "
@@ -692,7 +674,7 @@ class TestSandboxMessagesCleanService:
         assert stats["tenants_processed"] == num_tenants, (
             f"Expected {num_tenants} tenants processed, but got {stats['tenants_processed']}"
         )
-        
+
         # Assert message batch deletion
         expected_total_messages = num_tenants * messages_per_tenant
         assert stats["total_messages"] == expected_total_messages, (
@@ -703,13 +685,11 @@ class TestSandboxMessagesCleanService:
         assert stats["total_deleted"] == expected_total_messages, (
             f"Expected {expected_total_messages} messages deleted, but got {stats['total_deleted']}"
         )
-        
+
         # Verify all messages were deleted from database
         remaining_messages = db.session.query(Message).count()
-        assert remaining_messages == 0, (
-            f"Expected all messages to be deleted, but found {remaining_messages} remaining"
-        )
-        
+        assert remaining_messages == 0, f"Expected all messages to be deleted, but found {remaining_messages} remaining"
+
         # Verify all related records were deleted
         assert db.session.query(MessageFeedback).count() == 0
         assert db.session.query(MessageAnnotation).count() == 0

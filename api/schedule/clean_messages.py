@@ -13,15 +13,15 @@ logger = logging.getLogger(__name__)
 def clean_messages():
     """
     Clean expired messages from sandbox plan tenants.
-    
+
     This task uses SandboxMessagesCleanService to efficiently clean messages in batches.
     """
     click.echo(click.style("clean_messages: start clean messages.", fg="green"))
     start_at = time.perf_counter()
-    
+
     try:
         stats = SandboxMessagesCleanService.clean_sandbox_messages()
-        
+
         end_at = time.perf_counter()
         click.echo(
             click.style(
