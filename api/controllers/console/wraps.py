@@ -331,3 +331,79 @@ def is_admin_or_owner_required(f: Callable[P, R]):
         return f(*args, **kwargs)
 
     return decorated_function
+
+
+def decrypt_password_field(view: Callable[P, R]):
+    """
+    Decorator to decrypt password field in request payload.
+
+    Automatically decrypts the 'password' field if encryption is enabled.
+    If decryption fails, raises AuthenticationFailedError.
+
+    Usage:
+        @decrypt_password_field
+        def post(self):
+            args = LoginPayload.model_validate(console_ns.payload)
+            # args.password is now decrypted
+    """
+
+    @wraps(view)
+    def decorated(*args: P.args, **kwargs: P.kwargs):
+        from flask import request as flask_request
+
+        from controllers.console.auth.error import AuthenticationFailedError
+        from libs.encryption import FieldEncryption
+
+        # Get payload from request
+        if flask_request and flask_request.is_json:
+            payload = flask_request.get_json()
+            if payload and "password" in payload:
+                decrypted_password = FieldEncryption.decrypt_password(payload["password"])
+                if decrypted_password is None:
+                    raise AuthenticationFailedError("Invalid encrypted data")
+                # Modify the request data in place
+                payload["password"] = decrypted_password
+                # Update the cached JSON data
+                flask_request._cached_json = (payload, payload)
+
+        return view(*args, **kwargs)
+
+    return decorated
+
+
+def decrypt_code_field(view: Callable[P, R]):
+    """
+    Decorator to decrypt verification code field in request payload.
+
+    Automatically decrypts the 'code' field if encryption is enabled.
+    If decryption fails, raises EmailCodeError.
+
+    Usage:
+        @decrypt_code_field
+        def post(self):
+            args = EmailCodeLoginPayload.model_validate(console_ns.payload)
+            # args.code is now decrypted
+    """
+
+    @wraps(view)
+    def decorated(*args: P.args, **kwargs: P.kwargs):
+        from flask import request as flask_request
+
+        from controllers.console.auth.error import EmailCodeError
+        from libs.encryption import FieldEncryption
+
+        # Get payload from request
+        if flask_request and flask_request.is_json:
+            payload = flask_request.get_json()
+            if payload and "code" in payload:
+                decrypted_code = FieldEncryption.decrypt_verification_code(payload["code"])
+                if decrypted_code is None:
+                    raise EmailCodeError("Invalid encrypted code")
+                # Modify the request data in place
+                payload["code"] = decrypted_code
+                # Update the cached JSON data
+                flask_request._cached_json = (payload, payload)
+
+        return view(*args, **kwargs)
+
+    return decorated
