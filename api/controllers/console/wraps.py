@@ -9,10 +9,12 @@ from typing import ParamSpec, TypeVar
 from flask import abort, request
 
 from configs import dify_config
+from controllers.console.auth.error import AuthenticationFailedError, EmailCodeError
 from controllers.console.workspace.error import AccountNotInitializedError
 from enums.cloud_plan import CloudPlan
 from extensions.ext_database import db
 from extensions.ext_redis import redis_client
+from libs.encryption import FieldEncryption
 from libs.login import current_account_with_tenant
 from models.account import AccountStatus
 from models.dataset import RateLimitLog
@@ -333,6 +335,32 @@ def is_admin_or_owner_required(f: Callable[P, R]):
     return decorated_function
 
 
+def _decrypt_field(field_name: str, error_class: type[Exception], error_message: str) -> None:
+    """
+    Helper to decrypt a field in the request payload.
+
+    Args:
+        field_name: Name of the field to decrypt
+        error_class: Exception class to raise on decryption failure
+        error_message: Error message to include in the exception
+    """
+    if request and request.is_json:
+        payload = request.get_json()
+        if payload and field_name in payload:
+            encrypted_value = payload[field_name]
+            decrypted_value = FieldEncryption.decrypt_field(encrypted_value)
+
+            # Only raise error if encryption is enabled and decryption failed
+            if decrypted_value is None and FieldEncryption.is_enabled():
+                raise error_class(error_message)
+
+            # Update payload with decrypted value (or original if encryption disabled)
+            if decrypted_value is not None:
+                payload[field_name] = decrypted_value
+                # Update the cached JSON data
+                request._cached_json = (payload, payload)
+
+
 def decrypt_password_field(view: Callable[P, R]):
     """
     Decorator to decrypt password field in request payload.
@@ -349,23 +377,7 @@ def decrypt_password_field(view: Callable[P, R]):
 
     @wraps(view)
     def decorated(*args: P.args, **kwargs: P.kwargs):
-        from flask import request as flask_request
-
-        from controllers.console.auth.error import AuthenticationFailedError
-        from libs.encryption import FieldEncryption
-
-        # Get payload from request
-        if flask_request and flask_request.is_json:
-            payload = flask_request.get_json()
-            if payload and "password" in payload:
-                decrypted_password = FieldEncryption.decrypt_password(payload["password"])
-                if decrypted_password is None:
-                    raise AuthenticationFailedError("Invalid encrypted data")
-                # Modify the request data in place
-                payload["password"] = decrypted_password
-                # Update the cached JSON data
-                flask_request._cached_json = (payload, payload)
-
+        _decrypt_field("password", AuthenticationFailedError, "Invalid encrypted data")
         return view(*args, **kwargs)
 
     return decorated
@@ -387,23 +399,7 @@ def decrypt_code_field(view: Callable[P, R]):
 
     @wraps(view)
     def decorated(*args: P.args, **kwargs: P.kwargs):
-        from flask import request as flask_request
-
-        from controllers.console.auth.error import EmailCodeError
-        from libs.encryption import FieldEncryption
-
-        # Get payload from request
-        if flask_request and flask_request.is_json:
-            payload = flask_request.get_json()
-            if payload and "code" in payload:
-                decrypted_code = FieldEncryption.decrypt_verification_code(payload["code"])
-                if decrypted_code is None:
-                    raise EmailCodeError("Invalid encrypted code")
-                # Modify the request data in place
-                payload["code"] = decrypted_code
-                # Update the cached JSON data
-                flask_request._cached_json = (payload, payload)
-
+        _decrypt_field("code", EmailCodeError, "Invalid encrypted code")
         return view(*args, **kwargs)
 
     return decorated
