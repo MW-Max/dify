@@ -71,7 +71,12 @@ class _RootNodeValidator:
     """Validates root node invariants."""
 
     invalid_root_code: str = "INVALID_ROOT"
-    container_entry_types: tuple[NodeType, ...] = (NodeType.ITERATION_START, NodeType.LOOP_START)
+    container_node_types: tuple[NodeType, ...] = (
+        NodeType.ITERATION_START,
+        NodeType.LOOP_START,
+        NodeType.LOOP,
+        NodeType.ITERATION,
+    )
 
     def validate(self, graph: Graph) -> Sequence[GraphValidationIssue]:
         root_node = graph.root_node
@@ -87,7 +92,7 @@ class _RootNodeValidator:
             return issues
 
         node_type = getattr(root_node, "node_type", None)
-        if root_node.execution_type != NodeExecutionType.ROOT and node_type not in self.container_entry_types:
+        if root_node.execution_type != NodeExecutionType.ROOT and node_type not in self.container_node_types:
             issues.append(
                 GraphValidationIssue(
                     code=self.invalid_root_code,
